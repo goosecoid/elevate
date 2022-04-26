@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"math"
 	"os"
 	"sort"
@@ -10,7 +11,6 @@ import (
 
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
-	"gonum.org/v1/plot/plotutil"
 	"gonum.org/v1/plot/vg"
 )
 
@@ -71,7 +71,7 @@ func (c CustomTicks) Ticks(min, max float64) []plot.Tick {
 	start := min
 	var tks []plot.Tick
 
-	for ; start < max; {
+	for start < max {
 		tk := plot.Tick{
 			Value: start,
 			Label: fmt.Sprintf("%.f", math.RoundToEven(start)),
@@ -126,11 +126,15 @@ func main() {
 		})
 	}
 
-	err = plotutil.AddLinePoints(p, "Elevation", plotPoints)
-
+	lpLine, lpPoints, err := plotter.NewLinePoints(plotPoints)
 	if err != nil {
 		panic(err)
 	}
+
+	lpLine.Color = color.RGBA{R: 7, G: 87, B: 152}
+	lpPoints.Color = color.Transparent
+
+	p.Add(lpLine, lpPoints)
 
 	if err := p.Save(16*vg.Inch, 8*vg.Inch, "points.png"); err != nil {
 		panic(err)
