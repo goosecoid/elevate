@@ -25,6 +25,24 @@ type CustomTicks struct {
 	Interval int
 }
 
+func ParseHexColor(s string) (c color.RGBA, err error) {
+    c.A = 0xff
+    switch len(s) {
+    case 7:
+        _, err = fmt.Sscanf(s, "#%02x%02x%02x", &c.R, &c.G, &c.B)
+    case 4:
+        _, err = fmt.Sscanf(s, "#%1x%1x%1x", &c.R, &c.G, &c.B)
+        // Double the hex digits:
+        c.R *= 17
+        c.G *= 17
+        c.B *= 17
+    default:
+        err = fmt.Errorf("invalid length, must be 7 or 4")
+
+    }
+    return
+}
+
 func gpx3dDistanceHelper(dps []DataPoint, i int) float64 {
 	return gpx.Distance3D(dps[i-1].Latitude, dps[i-1].Longitude, dps[i-1].Elevation, dps[i].Latitude, dps[i].Longitude, dps[i].Elevation, true)
 }
@@ -131,7 +149,18 @@ func main() {
 		panic(err)
 	}
 
-	lpLine.Color = color.RGBA{R: 7, G: 87, B: 152}
+	blue, err := ParseHexColor("#009dff")
+	if err != nil {
+		panic(err)
+	}
+
+	slightlyLighterBlue, err := ParseHexColor("#0da2ff")
+	if err != nil {
+		panic(err)
+	}
+
+	lpLine.FillColor = blue
+	lpLine.Color = slightlyLighterBlue
 	lpPoints.Color = color.Transparent
 
 	p.Add(lpLine, lpPoints)
