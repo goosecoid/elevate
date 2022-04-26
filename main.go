@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"math"
 	"os"
+	"sort"
 
 	"github.com/tkrajina/gpxgo/gpx"
 
@@ -16,6 +19,10 @@ type DataPoint struct {
 	Longitude             float64
 	Elevation             gpx.NullableFloat64
 	Accumulated3dDistance float64
+}
+
+type CustomTicks struct {
+	Interval int
 }
 
 func gpx3dDistanceHelper(dps []DataPoint, i int) float64 {
@@ -59,6 +66,23 @@ func parseGpxToCsvData(gpxFile *gpx.GPX) []DataPoint {
 	return dataPoints
 }
 
+func (c CustomTicks) Ticks(min, max float64) []plot.Tick {
+	interval := math.RoundToEven(max / float64(c.Interval))
+	start := min
+	var tks []plot.Tick
+
+	for ; start < max; {
+		tk := plot.Tick{
+			Value: start,
+			Label: fmt.Sprintf("%.f", math.RoundToEven(start)),
+		}
+		start += interval
+		tks = append(tks, tk)
+	}
+
+	return tks
+}
+
 func main() {
 	dat, err := os.ReadFile(os.Args[1])
 	if err != nil {
@@ -71,12 +95,27 @@ func main() {
 	}
 
 	dataPoints := parseGpxToCsvData(gpxFile)
+	var elevationSlice []float64
+
+	for j := 0; j < len(dataPoints); j++ {
+		elevationSlice = append(elevationSlice, dataPoints[j].Elevation.Value())
+	}
+
+	elevationSlice = sort.Float64Slice(elevationSlice)
 
 	p := plot.New()
 
 	p.Title.Text = "Elevation Profile"
-	p.X.Label.Text = "Elevation (m)"
-	p.Y.Label.Text = "Distance (m)"
+
+	p.Y.Label.Text = "Elevation (m)"
+	p.Y.Min = 0
+	p.Y.Max = elevationSlice[len(elevationSlice)-1]
+	p.Y.Tick.Marker = CustomTicks{Interval: 10}
+
+	p.X.Min = 0
+	p.X.Max = dataPoints[len(dataPoints)-1].Accumulated3dDistance
+	p.X.Label.Text = "Distance (m)"
+	p.X.Tick.Marker = CustomTicks{Interval: 10}
 
 	var plotPoints plotter.XYs
 
