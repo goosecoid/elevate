@@ -67,7 +67,7 @@ func parseGpxToCsvData(gpxFile *gpx.GPX) []DataPoint {
 }
 
 func (c CustomTicks) Ticks(min, max float64) []plot.Tick {
-	interval := math.RoundToEven(max / float64(c.Interval))
+	interval := c.Interval
 	start := min
 	var tks []plot.Tick
 
@@ -76,7 +76,7 @@ func (c CustomTicks) Ticks(min, max float64) []plot.Tick {
 			Value: start,
 			Label: fmt.Sprintf("%.f", math.RoundToEven(start)),
 		}
-		start += interval
+		start += float64(interval)
 		tks = append(tks, tk)
 	}
 
@@ -110,12 +110,12 @@ func main() {
 	p.Y.Label.Text = "Elevation (m)"
 	p.Y.Min = 0
 	p.Y.Max = elevationSlice[len(elevationSlice)-1]
-	p.Y.Tick.Marker = CustomTicks{Interval: 10}
+	p.Y.Tick.Marker = CustomTicks{Interval: 100}
 
 	p.X.Min = 0
 	p.X.Max = dataPoints[len(dataPoints)-1].Accumulated3dDistance
 	p.X.Label.Text = "Distance (m)"
-	p.X.Tick.Marker = CustomTicks{Interval: 10}
+	p.X.Tick.Marker = CustomTicks{Interval: 1000}
 
 	var plotPoints plotter.XYs
 
