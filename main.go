@@ -207,7 +207,7 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 			yPrev := trY(pr.XYZs[i-1].Y)
 
 			// Poly
-			poly := c.ClipPolygonY([]vg.Point{{xPrev, 0}, {x, 0}, {x, y}, {xPrev, yPrev}})
+			poly := c.ClipPolygonY([]vg.Point{{X: xPrev, Y: 0}, {X: x, Y: 0}, {X: x, Y: y}, {X: xPrev, Y: yPrev}})
 			c.FillPolygon(lineStyle.Color, poly)
 			c.StrokeLines(lineStyle, poly)
 		}
