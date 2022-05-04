@@ -66,7 +66,8 @@ func CopyXYZs(data XYZer) XYZs {
 type Profile struct {
 	XYZs
 	draw.LineStyle
-	LineWidth vg.Length
+	StepWidth           float64
+	LineWidth           vg.Length
 	yellow, orange, red color.Color
 	gradientIntervals   float64
 }
@@ -75,13 +76,13 @@ func NewProfile(data XYZer, yellow, orange, red color.Color, gradientIntervals f
 	cpy := CopyXYZs(data)
 
 	return &Profile{
-		XYZs:              	cpy,
-		LineStyle: 			plotter.DefaultLineStyle,
-		yellow:            	yellow,
-		orange:            	orange,
-		red:               	red,
-		gradientIntervals: 	gradientIntervals,
-		LineWidth: 			plotter.DefaultLineStyle.Width,
+		XYZs:              cpy,
+		LineStyle:         plotter.DefaultLineStyle,
+		yellow:            yellow,
+		orange:            orange,
+		red:               red,
+		gradientIntervals: gradientIntervals,
+		LineWidth:         plotter.DefaultLineStyle.Width,
 	}
 }
 
@@ -102,15 +103,21 @@ var (
 	elevationSlice []float64
 	plotPoints     plotter.XYs
 	plotPointsz    XYZs
+	minPolyWidth   float64
 )
 
 func gpx3dDistanceHelper(dps []DataPoint, i int) float64 {
-	return gpx.Distance3D(dps[i-1].Latitude, dps[i-1].Longitude, dps[i-1].Elevation, dps[i].Latitude, dps[i].Longitude, dps[i].Elevation, true)
+	dist := gpx.Distance3D(dps[i-1].Latitude, dps[i-1].Longitude, dps[i-1].Elevation, dps[i].Latitude, dps[i].Longitude, dps[i].Elevation, true)
+	if dist > minPolyWidth {
+		minPolyWidth = dist
+	}
+	return dist
 }
 
 func calculateAccumulated3dDistance(dps []DataPoint, i int) float64 {
 	switch i {
 	case 0:
+		minPolyWidth = 0
 		return float64(0)
 	case 1:
 		return gpx3dDistanceHelper(dps, i)
@@ -176,12 +183,12 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 	trX, trY := plt.Transforms(&c)
 	lineStyle := pr.LineStyle
 
-	for _, d := range pr.XYZs {
+	for i, d := range pr.XYZs {
 
 		x := trX(d.X)
 		y := trY(d.Y)
 
-		line := c.ClipLinesY([]vg.Point{{X: x, Y: 0}, {X: x, Y: y}})
+		// line := c.ClipLinesY([]vg.Point{{X: x, Y: 0}, {X: x, Y: y}})
 
 		if d.Z < 5 {
 			lineStyle.Color = pr.yellow
@@ -192,8 +199,18 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 		} else {
 			lineStyle.Color = pr.red
 		}
+		// c.StrokeLines(lineStyle, line...)
 
-		c.StrokeLines(lineStyle, line...)
+		if i > 0 {
+
+			xPrev := trX(pr.XYZs[i-1].X)
+			yPrev := trY(pr.XYZs[i-1].Y)
+
+			// Poly
+			poly := c.ClipPolygonY([]vg.Point{{xPrev, 0}, {x, 0}, {x, y}, {xPrev, yPrev}})
+			c.FillPolygon(lineStyle.Color, poly)
+			c.StrokeLines(lineStyle, poly)
+		}
 	}
 }
 
