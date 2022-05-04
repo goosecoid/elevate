@@ -12,24 +12,7 @@ import (
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
-)
-
-type DataPoint struct {
-	Latitude              float64
-	Longitude             float64
-	Elevation             gpx.NullableFloat64
-	Accumulated3dDistance float64
-	InterpolatedGradient  float64
-}
-
-type CustomTicks struct {
-	Interval int
-}
-
-var (
-	dataPoints     []DataPoint
-	elevationSlice []float64
-	plotPoints     plotter.XYs
+	"gonum.org/v1/plot/vg/draw"
 )
 
 func ParseHexColor(s string) (c color.RGBA, err error) {
@@ -48,6 +31,78 @@ func ParseHexColor(s string) (c color.RGBA, err error) {
 	}
 	return
 }
+
+// XYZer wraps the Len and XYZ methods.
+type XYZer interface {
+	// Len returns the number of x, y, z triples.
+	Len() int
+
+	// XYZ returns an x, y, z triple.
+	XYZ(int) (float64, float64, float64)
+}
+
+// XYZs implements the XYZer interface using a slice.
+type XYZs []struct{ X, Y, Z float64 }
+
+// Len implements the Len method of the XYZer interface.
+func (xyz XYZs) Len() int {
+	return len(xyz)
+}
+
+// XYZ implements the XYZ method of the XYZer interface.
+func (xyz XYZs) XYZ(i int) (float64, float64, float64) {
+	return xyz[i].X, xyz[i].Y, xyz[i].Z
+}
+
+// CopyXYZs copies an XYZer, plot always requeires a copy of the data
+func CopyXYZs(data XYZer) XYZs {
+	cpy := make(XYZs, data.Len())
+	for i := range cpy {
+		cpy[i].X, cpy[i].Y, cpy[i].Z = data.XYZ(i)
+	}
+	return cpy
+}
+
+type Profile struct {
+	XYZs
+	draw.LineStyle
+	LineWidth vg.Length
+	yellow, orange, red color.Color
+	gradientIntervals   float64
+}
+
+func NewProfile(data XYZer, yellow, orange, red color.Color, gradientIntervals float64) *Profile {
+	cpy := CopyXYZs(data)
+
+	return &Profile{
+		XYZs:              	cpy,
+		LineStyle: 			plotter.DefaultLineStyle,
+		yellow:            	yellow,
+		orange:            	orange,
+		red:               	red,
+		gradientIntervals: 	gradientIntervals,
+		LineWidth: 			plotter.DefaultLineStyle.Width,
+	}
+}
+
+type DataPoint struct {
+	Latitude              float64
+	Longitude             float64
+	Elevation             gpx.NullableFloat64
+	Accumulated3dDistance float64
+	InterpolatedGradient  float64
+}
+
+type CustomTicks struct {
+	Interval int
+}
+
+var (
+	dataPoints     []DataPoint
+	elevationSlice []float64
+	plotPoints     plotter.XYs
+	plotPointsz    XYZs
+)
 
 func gpx3dDistanceHelper(dps []DataPoint, i int) float64 {
 	return gpx.Distance3D(dps[i-1].Latitude, dps[i-1].Longitude, dps[i-1].Elevation, dps[i].Latitude, dps[i].Longitude, dps[i].Elevation, true)
@@ -117,6 +172,31 @@ func (c CustomTicks) Ticks(min, max float64) []plot.Tick {
 	return tks
 }
 
+func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
+	trX, trY := plt.Transforms(&c)
+	lineStyle := pr.LineStyle
+
+	for _, d := range pr.XYZs {
+
+		x := trX(d.X)
+		y := trY(d.Y)
+
+		line := c.ClipLinesY([]vg.Point{{X: x, Y: 0}, {X: x, Y: y}})
+
+		if d.Z < 5 {
+			lineStyle.Color = pr.yellow
+		} else if d.Z >= 5 && d.Z < 10 {
+			lineStyle.Color = pr.orange
+		} else if math.IsNaN(d.Z) {
+			lineStyle.Color = color.Transparent
+		} else {
+			lineStyle.Color = pr.red
+		}
+
+		c.StrokeLines(lineStyle, line...)
+	}
+}
+
 func main() {
 
 	dat, err := os.ReadFile(os.Args[1])
@@ -154,6 +234,21 @@ func main() {
 			Y: dataPoint.Elevation.Value(),
 		})
 	}
+
+	for _, dataPoint := range dataPoints {
+		plotPointsz = append(plotPointsz, plotter.XYZ{
+			X: dataPoint.Accumulated3dDistance,
+			Y: dataPoint.Elevation.Value(),
+			Z: dataPoint.InterpolatedGradient,
+		})
+	}
+
+	y, _ := ParseHexColor("#ffff33")
+	o, _ := ParseHexColor("#ffb233")
+	r, _ := ParseHexColor("#ff4f33")
+
+	pr := NewProfile(plotPointsz, y, o, r, 100)
+	p.Add(pr)
 
 	lpLine, lpPoints, err := plotter.NewLinePoints(plotPoints)
 	if err != nil {
