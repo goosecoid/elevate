@@ -15,6 +15,10 @@ import (
 	"gonum.org/v1/plot/vg/draw"
 )
 
+func findNearestMultiple(input, divisor int) int {
+	return (input + divisor) - (input % divisor)
+}
+
 func ParseHexColor(s string) (c color.RGBA, err error) {
 	c.A = 0xff
 	switch len(s) {
@@ -34,10 +38,7 @@ func ParseHexColor(s string) (c color.RGBA, err error) {
 
 // XYZer wraps the Len and XYZ methods.
 type XYZer interface {
-	// Len returns the number of x, y, z triples.
 	Len() int
-
-	// XYZ returns an x, y, z triple.
 	XYZ(int) (float64, float64, float64)
 }
 
@@ -103,21 +104,16 @@ var (
 	elevationSlice []float64
 	plotPoints     plotter.XYs
 	plotPointsz    XYZs
-	minPolyWidth   float64
 )
 
 func gpx3dDistanceHelper(dps []DataPoint, i int) float64 {
-	dist := gpx.Distance3D(dps[i-1].Latitude, dps[i-1].Longitude, dps[i-1].Elevation, dps[i].Latitude, dps[i].Longitude, dps[i].Elevation, true)
-	if dist > minPolyWidth {
-		minPolyWidth = dist
-	}
-	return dist
+	return gpx.Distance3D(dps[i-1].Latitude, dps[i-1].Longitude,
+		dps[i-1].Elevation, dps[i].Latitude, dps[i].Longitude, dps[i].Elevation, true)
 }
 
 func calculateAccumulated3dDistance(dps []DataPoint, i int) float64 {
 	switch i {
 	case 0:
-		minPolyWidth = 0
 		return float64(0)
 	case 1:
 		return gpx3dDistanceHelper(dps, i)
@@ -131,7 +127,8 @@ func calculateInterpolatedGradient(dps []DataPoint, i int) float64 {
 	case 0:
 		return math.NaN()
 	default:
-		return ((dps[i].Elevation.Value() - dps[i-1].Elevation.Value()) / gpx3dDistanceHelper(dps, i)) * 100
+		return ((dps[i].Elevation.Value() - dps[i-1].Elevation.Value()) /
+			gpx3dDistanceHelper(dps, i)) * 100
 	}
 }
 
@@ -184,11 +181,8 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 	lineStyle := pr.LineStyle
 
 	for i, d := range pr.XYZs {
-
 		x := trX(d.X)
 		y := trY(d.Y)
-
-		// line := c.ClipLinesY([]vg.Point{{X: x, Y: 0}, {X: x, Y: y}})
 
 		if d.Z < 5 {
 			lineStyle.Color = pr.yellow
@@ -199,15 +193,15 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 		} else {
 			lineStyle.Color = pr.red
 		}
-		// c.StrokeLines(lineStyle, line...)
 
 		if i > 0 {
-
 			xPrev := trX(pr.XYZs[i-1].X)
 			yPrev := trY(pr.XYZs[i-1].Y)
 
 			// Poly
-			poly := c.ClipPolygonY([]vg.Point{{X: xPrev, Y: 0}, {X: x, Y: 0}, {X: x, Y: y}, {X: xPrev, Y: yPrev}})
+			poly := c.ClipPolygonY([]vg.Point{
+				{X: xPrev, Y: 0}, {X: x, Y: 0},
+				{X: x, Y: y}, {X: xPrev, Y: yPrev}})
 			c.FillPolygon(lineStyle.Color, poly)
 			c.StrokeLines(lineStyle, poly)
 		}
@@ -272,17 +266,12 @@ func main() {
 		panic(err)
 	}
 
-	blue, err := ParseHexColor("#009dff")
-	if err != nil {
-		panic(err)
-	}
-
-	lpLine.Color = blue
+	lpLine.Color = color.Black
+	lpLine.LineStyle.Width = plotter.DefaultLineStyle.Width * 2
 	lpPoints.Color = color.Transparent
 	p.Add(lpLine, lpPoints)
 
 	if err := p.Save(16*vg.Inch, 8*vg.Inch, "points.png"); err != nil {
 		panic(err)
 	}
-
 }
