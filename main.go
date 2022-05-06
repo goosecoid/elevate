@@ -73,7 +73,10 @@ type Profile struct {
 	gradientIntervals   float64
 }
 
-func NewProfile(data XYZer, yellow, orange, red color.Color, gradientIntervals float64) *Profile {
+func NewProfile(
+	data XYZer, yellow, orange, red color.Color,
+	gradientIntervals, stepWidth float64) *Profile {
+
 	cpy := CopyXYZs(data)
 
 	return &Profile{
@@ -84,6 +87,7 @@ func NewProfile(data XYZer, yellow, orange, red color.Color, gradientIntervals f
 		red:               red,
 		gradientIntervals: gradientIntervals,
 		LineWidth:         plotter.DefaultLineStyle.Width,
+		StepWidth:         stepWidth,
 	}
 }
 
@@ -107,32 +111,16 @@ var (
 )
 
 func gpx3dDistanceHelper(dps []DataPoint, i int) float64 {
-	return gpx.Distance3D(dps[i-1].Latitude, dps[i-1].Longitude,
-		dps[i-1].Elevation, dps[i].Latitude, dps[i].Longitude, dps[i].Elevation, true)
-}
-
-func calculateAccumulated3dDistance(dps []DataPoint, i int) float64 {
-	switch i {
-	case 0:
-		return float64(0)
-	case 1:
-		return gpx3dDistanceHelper(dps, i)
-	default:
-		return dps[i-1].Accumulated3dDistance + gpx3dDistanceHelper(dps, i)
-	}
+	return gpx.Distance3D(dps[i].Latitude, dps[i].Longitude,
+		dps[i].Elevation, dps[i+1].Latitude, dps[i+1].Longitude, dps[i+1].Elevation, true)
 }
 
 func calculateInterpolatedGradient(dps []DataPoint, i int) float64 {
-	switch i {
-	case 0:
-		return math.NaN()
-	default:
-		return ((dps[i].Elevation.Value() - dps[i-1].Elevation.Value()) /
-			gpx3dDistanceHelper(dps, i)) * 100
-	}
+	return ((dps[i+1].Elevation.Value() - dps[i].Elevation.Value()) /
+		gpx3dDistanceHelper(dps, i)) * 100
 }
 
-func parseGpxToCsvData(gpxFile *gpx.GPX) []DataPoint {
+func parseGpxToDesiredCsvDataValues(gpxFile *gpx.GPX) []DataPoint {
 	var dPoints []DataPoint
 
 	for _, track := range gpxFile.Tracks {
@@ -149,9 +137,13 @@ func parseGpxToCsvData(gpxFile *gpx.GPX) []DataPoint {
 
 	for _, track := range gpxFile.Tracks {
 		for _, segment := range track.Segments {
-			for i := 0; i < len(segment.Points); i++ {
-				dPoints[i].Accumulated3dDistance = calculateAccumulated3dDistance(dPoints, i)
-				dPoints[i].InterpolatedGradient = calculateInterpolatedGradient(dPoints, i)
+			for i := 0; i < len(segment.Points) - 1; i++ {
+				if i == 0 {
+					dPoints[i].Accumulated3dDistance = 0
+					dPoints[i].InterpolatedGradient = math.NaN()
+				}
+				dPoints[i+1].Accumulated3dDistance = gpx3dDistanceHelper(dPoints, i) + dPoints[i].Accumulated3dDistance
+				dPoints[i+1].InterpolatedGradient = calculateInterpolatedGradient(dPoints, i)
 			}
 		}
 	}
@@ -180,7 +172,10 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 	trX, trY := plt.Transforms(&c)
 	lineStyle := pr.LineStyle
 
-	for i, d := range pr.XYZs {
+	steps := findNearestMultiple(pr.XYZs.Len(), int(pr.StepWidth))
+
+	for i := 0; i < steps; {
+		d := pr.XYZs[i]
 		x := trX(d.X)
 		y := trY(d.Y)
 
@@ -205,6 +200,11 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 			c.FillPolygon(lineStyle.Color, poly)
 			c.StrokeLines(lineStyle, poly)
 		}
+		i = i + int(pr.StepWidth)
+
+		if i >= pr.XYZs.Len() {
+			break
+		}
 	}
 }
 
@@ -220,7 +220,7 @@ func main() {
 		panic(err)
 	}
 
-	dataPoints = parseGpxToCsvData(gpxFile)
+	dataPoints = parseGpxToDesiredCsvDataValues(gpxFile)
 
 	for j := 0; j < len(dataPoints); j++ {
 		elevationSlice = append(elevationSlice, dataPoints[j].Elevation.Value())
@@ -258,7 +258,7 @@ func main() {
 	o, _ := ParseHexColor("#ffb233")
 	r, _ := ParseHexColor("#ff4f33")
 
-	pr := NewProfile(plotPointsz, y, o, r, 100)
+	pr := NewProfile(plotPointsz, y, o, r, 100, 1)
 	p.Add(pr)
 
 	lpLine, lpPoints, err := plotter.NewLinePoints(plotPoints)
