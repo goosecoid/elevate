@@ -190,19 +190,19 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 		}
 
 		if i > 0 {
-			xPrev := trX(pr.XYZs[i-1].X)
-			yPrev := trY(pr.XYZs[i-1].Y)
+			xNext := trX(pr.XYZs[i+1].X)
+			yNext := trY(pr.XYZs[i+1].Y)
 
 			// Poly
 			poly := c.ClipPolygonY([]vg.Point{
-				{X: xPrev, Y: 0}, {X: x, Y: 0},
-				{X: x, Y: y}, {X: xPrev, Y: yPrev}})
+				{X: x, Y: 0}, {X: xNext, Y: 0},
+				{X: xNext, Y: yNext}, {X: x, Y: y}})
 			c.FillPolygon(lineStyle.Color, poly)
 			c.StrokeLines(lineStyle, poly)
 		}
 		i = i + int(pr.StepWidth)
 
-		if i >= pr.XYZs.Len() {
+		if i >= pr.XYZs.Len() - 1 {
 			break
 		}
 	}
