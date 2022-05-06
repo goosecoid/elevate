@@ -137,7 +137,7 @@ func parseGpxToDesiredCsvDataValues(gpxFile *gpx.GPX) []DataPoint {
 
 	for _, track := range gpxFile.Tracks {
 		for _, segment := range track.Segments {
-			for i := 0; i < len(segment.Points) - 1; i++ {
+			for i := 0; i < len(segment.Points)-1; i++ {
 				if i == 0 {
 					dPoints[i].Accumulated3dDistance = 0
 					dPoints[i].InterpolatedGradient = math.NaN()
@@ -171,7 +171,6 @@ func (c CustomTicks) Ticks(min, max float64) []plot.Tick {
 func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 	trX, trY := plt.Transforms(&c)
 	lineStyle := pr.LineStyle
-
 	steps := findNearestMultiple(pr.XYZs.Len(), int(pr.StepWidth))
 
 	for i := 0; i < steps; {
@@ -179,30 +178,47 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 		x := trX(d.X)
 		y := trY(d.Y)
 
-		if d.Z < 5 {
+		var averageGradient float64
+		next := int(math.Min(float64(pr.Len())-pr.StepWidth-1, float64(i)+pr.StepWidth))
+		for j := 0; j <= next-i; j++ {
+			if j == (next-i) {
+				averageGradient = averageGradient / float64(next-i)
+				break
+			}
+			averageGradient = averageGradient + pr.XYZs[i+j].Z
+		}
+
+		if int(averageGradient) < 5 {
 			lineStyle.Color = pr.yellow
-		} else if d.Z >= 5 && d.Z < 10 {
+		} else if int(averageGradient) >= 5 && int(averageGradient) < 10 {
 			lineStyle.Color = pr.orange
-		} else if math.IsNaN(d.Z) {
+		} else if math.IsNaN(averageGradient) {
 			lineStyle.Color = color.Transparent
 		} else {
 			lineStyle.Color = pr.red
 		}
 
-		if i > 0 {
-			xNext := trX(pr.XYZs[i+1].X)
-			yNext := trY(pr.XYZs[i+1].Y)
+		for j := 0; j <= next-i; j++ {
+			if j == (next - i) {
+				averageGradient = averageGradient / float64(next-i)
+				break
+			}
+			averageGradient = averageGradient + pr.XYZs[i+j].Z
+		}
 
-			// Poly
+		for j := 0; j <= next-i; j++ {
+			dNext := pr.XYZs[i + j + 1]
+			xNext := trX(dNext.X)
+			yNext := trY(dNext.Y)
 			poly := c.ClipPolygonY([]vg.Point{
 				{X: x, Y: 0}, {X: xNext, Y: 0},
 				{X: xNext, Y: yNext}, {X: x, Y: y}})
 			c.FillPolygon(lineStyle.Color, poly)
 			c.StrokeLines(lineStyle, poly)
 		}
-		i = i + int(pr.StepWidth)
 
-		if i >= pr.XYZs.Len() - 1 {
+		i = i + int(pr.StepWidth)
+		if i >= pr.XYZs.Len() {
 			break
 		}
 	}
@@ -258,7 +274,7 @@ func main() {
 	o, _ := ParseHexColor("#ffb233")
 	r, _ := ParseHexColor("#ff4f33")
 
-	pr := NewProfile(plotPointsz, y, o, r, 100, 1)
+	pr := NewProfile(plotPointsz, y, o, r, 100, 5)
 	p.Add(pr)
 
 	lpLine, lpPoints, err := plotter.NewLinePoints(plotPoints)
