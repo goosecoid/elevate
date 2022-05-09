@@ -188,14 +188,16 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 			averageGradient = averageGradient + pr.XYZs[i+j].Z
 		}
 
-		if int(averageGradient) < 5 {
+		if int(averageGradient) >= 2 && int(averageGradient) < 5 {
 			lineStyle.Color = pr.yellow
 		} else if int(averageGradient) >= 5 && int(averageGradient) < 10 {
 			lineStyle.Color = pr.orange
-		} else if math.IsNaN(averageGradient) {
+		} else if int(averageGradient) >= 10 && int(averageGradient) < 15 {
+			lineStyle.Color = pr.red
+		} else if math.IsNaN(averageGradient) || int(averageGradient) < 2 {
 			lineStyle.Color = color.Transparent
 		} else {
-			lineStyle.Color = pr.red
+			lineStyle.Color = color.Black
 		}
 
 		for j := 0; j <= next-i; j++ {
@@ -245,15 +247,16 @@ func main() {
 	elevationSlice = sort.Float64Slice(elevationSlice)
 
 	p := plot.New()
-	p.Title.Text = "Elevation Profile"
 	p.Y.Label.Text = "Elevation (m)"
 	p.Y.Min = 0
-	p.Y.Max = elevationSlice[len(elevationSlice)-1]
+	p.Y.Max = 2000
 	p.Y.Tick.Marker = CustomTicks{Interval: 100}
 	p.X.Min = 0
 	p.X.Max = dataPoints[len(dataPoints)-1].Accumulated3dDistance
 	p.X.Label.Text = "Distance (m)"
 	p.X.Tick.Marker = CustomTicks{Interval: 1000}
+	p.HideX()
+	p.HideY()
 
 	for _, dataPoint := range dataPoints {
 		plotPoints = append(plotPoints, plotter.XY{
@@ -274,7 +277,7 @@ func main() {
 	o, _ := ParseHexColor("#ffb233")
 	r, _ := ParseHexColor("#ff4f33")
 
-	pr := NewProfile(plotPointsz, y, o, r, 100, 5)
+	pr := NewProfile(plotPointsz, y, o, r, 100, 20)
 	p.Add(pr)
 
 	lpLine, lpPoints, err := plotter.NewLinePoints(plotPoints)
@@ -283,7 +286,7 @@ func main() {
 	}
 
 	lpLine.Color = color.Black
-	lpLine.LineStyle.Width = plotter.DefaultLineStyle.Width * 2
+	lpLine.LineStyle.Width = plotter.DefaultLineStyle.Width * 3
 	lpPoints.Color = color.Transparent
 	p.Add(lpLine, lpPoints)
 
