@@ -10,7 +10,9 @@ import (
 	"github.com/tkrajina/gpxgo/gpx"
 
 	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/font"
 	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/text"
 	"gonum.org/v1/plot/vg"
 	"gonum.org/v1/plot/vg/draw"
 )
@@ -67,14 +69,16 @@ func CopyXYZs(data XYZer) XYZs {
 type Profile struct {
 	XYZs
 	draw.LineStyle
-	StepWidth           float64
-	LineWidth           vg.Length
-	yellow, orange, red color.Color
-	gradientIntervals   float64
+	Style                             text.Style
+	StepWidth                         float64
+	LineWidth                         vg.Length
+	white, yellow, orange, red, black color.Color
+	gradientIntervals                 float64
 }
 
 func NewProfile(
-	data XYZer, yellow, orange, red color.Color,
+	data XYZer, style text.Style,
+	white, yellow, orange, red, black color.Color,
 	gradientIntervals, stepWidth float64) *Profile {
 
 	cpy := CopyXYZs(data)
@@ -82,9 +86,12 @@ func NewProfile(
 	return &Profile{
 		XYZs:              cpy,
 		LineStyle:         plotter.DefaultLineStyle,
+		Style:             style,
+		white:             white,
 		yellow:            yellow,
 		orange:            orange,
 		red:               red,
+		black:             black,
 		gradientIntervals: gradientIntervals,
 		LineWidth:         plotter.DefaultLineStyle.Width,
 		StepWidth:         stepWidth,
@@ -173,6 +180,42 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 	lineStyle := pr.LineStyle
 	steps := findNearestMultiple(pr.XYZs.Len(), int(pr.StepWidth))
 
+	// Draw legend polys to show gradients
+	wlegePoly := c.ClipPolygonX([]vg.Point{
+		{X: trX(200), Y: trY(1100)}, {X: trX(200), Y: trY(1200)},
+		{X: trX(800), Y: trY(1200)}, {X: trX(800), Y: trY(1100)}})
+	c.FillPolygon(pr.white, wlegePoly)
+	var pointsToConnect []vg.Point
+	pointsToConnect = append(pointsToConnect, wlegePoly...)
+	pointsToConnect = append(pointsToConnect, vg.Point{X: trX(200), Y: trY(1100)})
+	c.StrokeLines(lineStyle, pointsToConnect)
+	ylegePoly := c.ClipPolygonY([]vg.Point{
+		{X: trX(200), Y: trY(1200)}, {X: trX(200), Y: trY(1300)},
+		{X: trX(800), Y: trY(1300)}, {X: trX(800), Y: trY(1200)}})
+	c.FillPolygon(pr.yellow, ylegePoly)
+	c.StrokeLines(lineStyle, ylegePoly)
+	olegePoly := c.ClipPolygonY([]vg.Point{
+		{X: trX(200), Y: trY(1300)}, {X: trX(200), Y: trY(1400)},
+		{X: trX(800), Y: trY(1400)}, {X: trX(800), Y: trY(1300)}})
+	c.FillPolygon(pr.orange, olegePoly)
+	c.StrokeLines(lineStyle, olegePoly)
+	rlegePoly := c.ClipPolygonY([]vg.Point{
+		{X: trX(200), Y: trY(1400)}, {X: trX(200), Y: trY(1500)},
+		{X: trX(800), Y: trY(1500)}, {X: trX(800), Y: trY(1400)}})
+	c.FillPolygon(pr.red, rlegePoly)
+	c.StrokeLines(lineStyle, rlegePoly)
+	blegePoly := c.ClipPolygonY([]vg.Point{
+		{X: trX(200), Y: trY(1500)}, {X: trX(200), Y: trY(1600)},
+		{X: trX(800), Y: trY(1600)}, {X: trX(800), Y: trY(1500)}})
+	c.FillPolygon(pr.black, blegePoly)
+	c.StrokeLines(lineStyle, blegePoly)
+
+	c.FillText(pr.Style, vg.Point{X: trX(1500), Y: trY(1175)}, "0 - 2%")
+	c.FillText(pr.Style, vg.Point{X: trX(1500), Y: trY(1275)}, "2 - 5%")
+	c.FillText(pr.Style, vg.Point{X: trX(1500), Y: trY(1375)}, "5 - 10%")
+	c.FillText(pr.Style, vg.Point{X: trX(1500), Y: trY(1475)}, "10 - 15%")
+	c.FillText(pr.Style, vg.Point{X: trX(1500), Y: trY(1575)}, "> 15%")
+
 	for i := 0; i < steps; {
 		d := pr.XYZs[i]
 		x := trX(d.X)
@@ -181,7 +224,7 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 		var averageGradient float64
 		next := int(math.Min(float64(pr.Len())-pr.StepWidth-1, float64(i)+pr.StepWidth))
 		for j := 0; j <= next-i; j++ {
-			if j == (next-i) {
+			if j == (next - i) {
 				averageGradient = averageGradient / float64(next-i)
 				break
 			}
@@ -195,9 +238,9 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 		} else if int(averageGradient) >= 10 && int(averageGradient) < 15 {
 			lineStyle.Color = pr.red
 		} else if math.IsNaN(averageGradient) || int(averageGradient) < 2 {
-			lineStyle.Color = color.Transparent
+			lineStyle.Color = pr.white
 		} else {
-			lineStyle.Color = color.Black
+			lineStyle.Color = pr.black
 		}
 
 		for j := 0; j <= next-i; j++ {
@@ -209,7 +252,7 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 		}
 
 		for j := 0; j <= next-i; j++ {
-			dNext := pr.XYZs[i + j + 1]
+			dNext := pr.XYZs[i+j+1]
 			xNext := trX(dNext.X)
 			yNext := trY(dNext.Y)
 			poly := c.ClipPolygonY([]vg.Point{
@@ -246,14 +289,17 @@ func main() {
 
 	elevationSlice = sort.Float64Slice(elevationSlice)
 
+	tr42 := font.Font{Variant: "Serif", Size: 26}
+
 	p := plot.New()
-	p.Y.Label.Text = "Elevation (m)"
+	p.Title.Text = "Mont Ventoux climb from Bédoin"
+	p.Title.TextStyle.YAlign = -2.5
+	p.Title.TextStyle.Font = tr42
 	p.Y.Min = 0
 	p.Y.Max = 2000
 	p.Y.Tick.Marker = CustomTicks{Interval: 100}
 	p.X.Min = 0
 	p.X.Max = dataPoints[len(dataPoints)-1].Accumulated3dDistance
-	p.X.Label.Text = "Distance (m)"
 	p.X.Tick.Marker = CustomTicks{Interval: 1000}
 	p.HideX()
 	p.HideY()
@@ -273,11 +319,25 @@ func main() {
 		})
 	}
 
-	y, _ := ParseHexColor("#ffff33")
-	o, _ := ParseHexColor("#ffb233")
-	r, _ := ParseHexColor("#ff4f33")
+	w, _ := ParseHexColor("#ffea84")
+	y, _ := ParseHexColor("#ffd384")
+	o, _ := ParseHexColor("#ffb684")
+	r, _ := ParseHexColor("#ff9f84")
+	b, _ := ParseHexColor("#ff8484")
 
-	pr := NewProfile(plotPointsz, y, o, r, 100, 20)
+
+	defaultFont := plot.DefaultFont
+	hdlr := plot.DefaultTextHandler
+
+	style := text.Style{
+		Color:   color.Black,
+		Font:    font.From(defaultFont, 12),
+		XAlign:  draw.XCenter,
+		YAlign:  draw.YTop,
+		Handler: hdlr,
+	}
+
+	pr := NewProfile(plotPointsz, style, w, y, o, r, b, 100, 5)
 	p.Add(pr)
 
 	lpLine, lpPoints, err := plotter.NewLinePoints(plotPoints)
@@ -286,7 +346,7 @@ func main() {
 	}
 
 	lpLine.Color = color.Black
-	lpLine.LineStyle.Width = plotter.DefaultLineStyle.Width * 3
+	lpLine.LineStyle.Width = plotter.DefaultLineStyle.Width
 	lpPoints.Color = color.Transparent
 	p.Add(lpLine, lpPoints)
 
