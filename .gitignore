@@ -10,7 +10,6 @@
 *.orig
 *.rej
 *.exe
-*.png
 .*.swp
 core
 *.cgo*.go
