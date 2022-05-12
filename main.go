@@ -17,10 +17,6 @@ import (
 	"gonum.org/v1/plot/vg/draw"
 )
 
-func findNearestMultiple(input, divisor int) int {
-	return (input + divisor) - (input % divisor)
-}
-
 func ParseHexColor(s string) (c color.RGBA, err error) {
 	c.A = 0xff
 	switch len(s) {
@@ -70,31 +66,29 @@ type Profile struct {
 	XYZs
 	draw.LineStyle
 	Style                             text.Style
-	StepWidth                         float64
+	StepWidth                         int
 	LineWidth                         vg.Length
 	white, yellow, orange, red, black color.Color
-	gradientIntervals                 float64
 }
 
 func NewProfile(
 	data XYZer, style text.Style,
 	white, yellow, orange, red, black color.Color,
-	gradientIntervals, stepWidth float64) *Profile {
+	stepWidth int) *Profile {
 
 	cpy := CopyXYZs(data)
 
 	return &Profile{
-		XYZs:              cpy,
-		LineStyle:         plotter.DefaultLineStyle,
-		Style:             style,
-		white:             white,
-		yellow:            yellow,
-		orange:            orange,
-		red:               red,
-		black:             black,
-		gradientIntervals: gradientIntervals,
-		LineWidth:         plotter.DefaultLineStyle.Width,
-		StepWidth:         stepWidth,
+		XYZs:      cpy,
+		LineStyle: plotter.DefaultLineStyle,
+		Style:     style,
+		white:     white,
+		yellow:    yellow,
+		orange:    orange,
+		red:       red,
+		black:     black,
+		LineWidth: plotter.DefaultLineStyle.Width,
+		StepWidth: stepWidth,
 	}
 }
 
@@ -118,12 +112,12 @@ var (
 )
 
 func gpx3dDistanceHelper(dps []DataPoint, i int) float64 {
-	return gpx.Distance3D(dps[i].Latitude, dps[i].Longitude,
-		dps[i].Elevation, dps[i+1].Latitude, dps[i+1].Longitude, dps[i+1].Elevation, true)
+	return gpx.Distance3D(dps[i-1].Latitude, dps[i-1].Longitude,
+		dps[i-1].Elevation, dps[i].Latitude, dps[i].Longitude, dps[i].Elevation, true)
 }
 
 func calculateInterpolatedGradient(dps []DataPoint, i int) float64 {
-	return ((dps[i+1].Elevation.Value() - dps[i].Elevation.Value()) /
+	return ((dps[i].Elevation.Value() - dps[i-1].Elevation.Value()) /
 		gpx3dDistanceHelper(dps, i)) * 100
 }
 
@@ -144,13 +138,16 @@ func parseGpxToDesiredCsvDataValues(gpxFile *gpx.GPX) []DataPoint {
 
 	for _, track := range gpxFile.Tracks {
 		for _, segment := range track.Segments {
-			for i := 0; i < len(segment.Points)-1; i++ {
-				if i == 0 {
-					dPoints[i].Accumulated3dDistance = 0
-					dPoints[i].InterpolatedGradient = math.NaN()
+			for i := 1; i < len(segment.Points); i++ {
+				if i == 1 {
+					dPoints[0].Accumulated3dDistance = 0
+					dPoints[0].InterpolatedGradient = math.NaN()
+					dPoints[i].Accumulated3dDistance = gpx3dDistanceHelper(dPoints, i)
+					dPoints[i].InterpolatedGradient = calculateInterpolatedGradient(dPoints, i)
+				} else {
+					dPoints[i].Accumulated3dDistance = gpx3dDistanceHelper(dPoints, i) + dPoints[i-1].Accumulated3dDistance
+					dPoints[i].InterpolatedGradient = calculateInterpolatedGradient(dPoints, i)
 				}
-				dPoints[i+1].Accumulated3dDistance = gpx3dDistanceHelper(dPoints, i) + dPoints[i].Accumulated3dDistance
-				dPoints[i+1].InterpolatedGradient = calculateInterpolatedGradient(dPoints, i)
 			}
 		}
 	}
@@ -175,10 +172,9 @@ func (c CustomTicks) Ticks(min, max float64) []plot.Tick {
 	return tks
 }
 
-func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
+func (pr *Profile) drawLegend(c draw.Canvas, plt *plot.Plot) {
 	trX, trY := plt.Transforms(&c)
 	lineStyle := pr.LineStyle
-	steps := findNearestMultiple(pr.XYZs.Len(), int(pr.StepWidth))
 
 	// Draw legend polys to show gradients
 	wlegePoly := c.ClipPolygonX([]vg.Point{
@@ -215,56 +211,79 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 	c.FillText(pr.Style, vg.Point{X: trX(1500), Y: trY(1375)}, "5 - 10%")
 	c.FillText(pr.Style, vg.Point{X: trX(1500), Y: trY(1475)}, "10 - 15%")
 	c.FillText(pr.Style, vg.Point{X: trX(1500), Y: trY(1575)}, "> 15%")
+}
 
-	for i := 0; i < steps; {
-		d := pr.XYZs[i]
-		x := trX(d.X)
-		y := trY(d.Y)
+func (pr *Profile) CalculateGradientColor(gradient float64) color.Color {
+	var color color.Color
 
-		var averageGradient float64
-		next := int(math.Min(float64(pr.Len())-pr.StepWidth-1, float64(i)+pr.StepWidth))
-		for j := 0; j <= next-i; j++ {
-			if j == (next - i) {
-				averageGradient = averageGradient / float64(next-i)
-				break
+	if int(gradient) >= 2 && int(gradient) < 5 {
+		color = pr.yellow
+	} else if int(gradient) >= 5 && int(gradient) < 10 {
+		color = pr.orange
+	} else if int(gradient) >= 10 && int(gradient) < 15 {
+		color = pr.red
+	} else if math.IsNaN(gradient) || int(gradient) < 2 {
+		color = pr.white
+	} else {
+		color = pr.black
+	}
+
+	return color
+}
+
+func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
+	gradientColors := make(map[int]draw.LineStyle)
+	trX, trY := plt.Transforms(&c)
+	lineStyle := pr.LineStyle
+	lineStyle.Width = lineStyle.Width
+	steps := int(math.Floor(float64(pr.Len() / pr.StepWidth)))
+
+	// Add legend
+	pr.drawLegend(c, plt)
+
+	// calculate average gradients and attribute color for polys
+	for i := 1; i < pr.Len(); i++ {
+		var gradientAvg float64
+		gradientAvg = gradientAvg + pr.XYZs[i].Z
+
+		if i == pr.Len() - 1 {
+			gradientAvg = gradientAvg / float64(pr.Len()-(steps*pr.StepWidth))
+			cl := pr.CalculateGradientColor(float64(gradientAvg))
+			lineStyle.Color = cl
+			for j := (steps * pr.StepWidth) + 1; j < pr.Len(); j++ {
+				gradientColors[j] = lineStyle
 			}
-			averageGradient = averageGradient + pr.XYZs[i+j].Z
 		}
 
-		if int(averageGradient) >= 2 && int(averageGradient) < 5 {
-			lineStyle.Color = pr.yellow
-		} else if int(averageGradient) >= 5 && int(averageGradient) < 10 {
-			lineStyle.Color = pr.orange
-		} else if int(averageGradient) >= 10 && int(averageGradient) < 15 {
-			lineStyle.Color = pr.red
-		} else if math.IsNaN(averageGradient) || int(averageGradient) < 2 {
-			lineStyle.Color = pr.white
+		if i%int(pr.StepWidth) == 0 {
+			gradientAvg = gradientAvg / float64(pr.StepWidth)
+			cl := pr.CalculateGradientColor(float64(gradientAvg))
+			lineStyle.Color = cl
+			for j := i - int(pr.StepWidth) + 1; j <= i; j++ {
+				gradientColors[j] = lineStyle
+			}
+			gradientAvg = 0
+		}
+	}
+
+	for z := 0; z < pr.Len(); z++ {
+		x := trX(pr.XYZs[z].X)
+		y := trY(pr.XYZs[z].Y)
+		xNext := trX(pr.XYZs[z].X)
+		yNext := trY(pr.XYZs[z].Y)
+
+		poly := c.ClipPolygonXY([]vg.Point{
+			{X: x, Y: 0},
+			{X: xNext, Y: 0},
+			{X: xNext, Y: yNext},
+			{X: x, Y: y},
+		})
+		if z == 0 {
+			c.FillPolygon(gradientColors[1].Color, poly)
+			c.StrokeLines(gradientColors[1], poly)
 		} else {
-			lineStyle.Color = pr.black
-		}
-
-		for j := 0; j <= next-i; j++ {
-			if j == (next - i) {
-				averageGradient = averageGradient / float64(next-i)
-				break
-			}
-			averageGradient = averageGradient + pr.XYZs[i+j].Z
-		}
-
-		for j := 0; j <= next-i; j++ {
-			dNext := pr.XYZs[i+j+1]
-			xNext := trX(dNext.X)
-			yNext := trY(dNext.Y)
-			poly := c.ClipPolygonY([]vg.Point{
-				{X: x, Y: 0}, {X: xNext, Y: 0},
-				{X: xNext, Y: yNext}, {X: x, Y: y}})
-			c.FillPolygon(lineStyle.Color, poly)
-			c.StrokeLines(lineStyle, poly)
-		}
-
-		i = i + int(pr.StepWidth)
-		if i >= pr.XYZs.Len() {
-			break
+			c.FillPolygon(gradientColors[z].Color, poly)
+			c.StrokeLines(gradientColors[z], poly)
 		}
 	}
 }
@@ -325,7 +344,6 @@ func main() {
 	r, _ := ParseHexColor("#ff9f84")
 	b, _ := ParseHexColor("#ff8484")
 
-
 	defaultFont := plot.DefaultFont
 	hdlr := plot.DefaultTextHandler
 
@@ -337,7 +355,7 @@ func main() {
 		Handler: hdlr,
 	}
 
-	pr := NewProfile(plotPointsz, style, w, y, o, r, b, 100, 5)
+	pr := NewProfile(plotPointsz, style, w, y, o, r, b, 1)
 	p.Add(pr)
 
 	lpLine, lpPoints, err := plotter.NewLinePoints(plotPoints)
