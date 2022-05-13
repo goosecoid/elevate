@@ -117,6 +117,7 @@ func gpx3dDistanceHelper(dps []DataPoint, i int) float64 {
 }
 
 func calculateInterpolatedGradient(dps []DataPoint, i int) float64 {
+	fmt.Print("Data: ", dps[i].Elevation.Value(), dps[i-1].Elevation.Value(), gpx3dDistanceHelper(dps, i), (dps[i].Elevation.Value() - dps[i-1].Elevation.Value()), "\n")
 	return ((dps[i].Elevation.Value() - dps[i-1].Elevation.Value()) /
 		gpx3dDistanceHelper(dps, i)) * 100
 }
@@ -173,6 +174,7 @@ func (c CustomTicks) Ticks(min, max float64) []plot.Tick {
 }
 
 func (pr *Profile) drawLegend(c draw.Canvas, plt *plot.Plot) {
+	var pointsToConnect []vg.Point
 	trX, trY := plt.Transforms(&c)
 	lineStyle := pr.LineStyle
 
@@ -181,7 +183,6 @@ func (pr *Profile) drawLegend(c draw.Canvas, plt *plot.Plot) {
 		{X: trX(200), Y: trY(1100)}, {X: trX(200), Y: trY(1200)},
 		{X: trX(800), Y: trY(1200)}, {X: trX(800), Y: trY(1100)}})
 	c.FillPolygon(pr.white, wlegePoly)
-	var pointsToConnect []vg.Point
 	pointsToConnect = append(pointsToConnect, wlegePoly...)
 	pointsToConnect = append(pointsToConnect, vg.Point{X: trX(200), Y: trY(1100)})
 	c.StrokeLines(lineStyle, pointsToConnect)
@@ -235,7 +236,6 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 	gradientColors := make(map[int]draw.LineStyle)
 	trX, trY := plt.Transforms(&c)
 	lineStyle := pr.LineStyle
-	lineStyle.Width = lineStyle.Width
 	steps := int(math.Floor(float64(pr.Len() / pr.StepWidth)))
 
 	// Add legend
@@ -262,15 +262,15 @@ func (pr *Profile) Plot(c draw.Canvas, plt *plot.Plot) {
 			for j := i - int(pr.StepWidth) + 1; j <= i; j++ {
 				gradientColors[j] = lineStyle
 			}
-			gradientAvg = 0
 		}
 	}
 
-	for z := 0; z < pr.Len(); z++ {
+	// draw polys
+	for z := 0; z < pr.Len() - 1; z++ {
 		x := trX(pr.XYZs[z].X)
 		y := trY(pr.XYZs[z].Y)
-		xNext := trX(pr.XYZs[z].X)
-		yNext := trY(pr.XYZs[z].Y)
+		xNext := trX(pr.XYZs[z+1].X)
+		yNext := trY(pr.XYZs[z+1].Y)
 
 		poly := c.ClipPolygonXY([]vg.Point{
 			{X: x, Y: 0},
@@ -355,7 +355,7 @@ func main() {
 		Handler: hdlr,
 	}
 
-	pr := NewProfile(plotPointsz, style, w, y, o, r, b, 1)
+	pr := NewProfile(plotPointsz, style, w, y, o, r, b, len(dataPoints) / 100 * 5)
 	p.Add(pr)
 
 	lpLine, lpPoints, err := plotter.NewLinePoints(plotPoints)
